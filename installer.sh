@@ -353,7 +353,12 @@ main() {
     }
 
     if ! check_cmd me3; then
-        say "me3 is not available on PATH, make sure to update your shell profile\nPATH=\"\$PATH:$HOME/.local/bin\""
+        if check_cmd systemctl; then
+            systemctl --user import-environment PATH || true
+        fi
+        if ! check_cmd me3; then
+            say "me3 installed to $HOME/.local/bin. PATH configured via ~/.config/environment.d; open a new terminal or log out/in for it to take effect."
+        fi
     fi
 
     datadir=${XDG_DATA_HOME:-$HOME/.local/share}

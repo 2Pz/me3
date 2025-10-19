@@ -34,9 +34,18 @@ This guide provides step-by-step instructions to install `me3`, a mod loader for
     curl --proto '=https' --tlsv1.2 -sSfL https://github.com/garyttierney/me3/releases/latest/download/installer.sh | sh
     ```
 
-    <h3>2. Add the me3 binary to PATH</h3>
+    <h3>2. PATH configuration</h3>
 
-    Ensure that `me3` is available on your PATH by checking if `me3 info` is successful. If not, update the `PATH` environment variable to include `$HOME/.local/bin`.
+    The installer places `me3` into `$HOME/.local/bin` and configures PATH via `~/.config/environment.d/10-me3.conf` on systemd-based desktops. It also adds a `.bash_profile` fallback on Steam Deck/bash. Open a new terminal or log out/in, then verify with `me3 info`.
+
+    ??? note "Steam Deck (SteamOS)"
+
+        If PATH is still missing in a terminal, add it to your shell profile manually:
+
+        ```bash
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bash_profile
+        ```
+        Close and re-open the terminal (or re-login), then run `me3 info`.
 
 ## Verifying the installation
 
