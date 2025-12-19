@@ -43,6 +43,10 @@ pub struct Native {
     #[serde(default)]
     load_after: Vec<Dependent<String>>,
 
+    /// Should this native be loaded before the game's static initialization?
+    #[serde(default = "off")]
+    pub early_load: bool,
+
     /// An optional symbol to be called after this native successfully loads.
     pub initializer: Option<NativeInitializerCondition>,
 
@@ -60,6 +64,7 @@ impl Native {
             load_before: vec![],
             initializer: None,
             finalizer: None,
+            early_load: false,
         }
     }
 }

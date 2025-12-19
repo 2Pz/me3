@@ -153,6 +153,22 @@ fn before_game_main(attach_config: Arc<AttachConfig>, exe: Executable) -> Result
         alloc_hooks::hook_system_allocator(&attach_config, exe)?;
     }
 
+    for native in &attach_config.natives {
+        if native.early_load {
+            if let Err(e) = ModHost::get_attached().load_native(&native.path, &native.initializer) {
+                warn!(
+                    error = &*e,
+                    path = %native.path.display(),
+                    "failed to load early native mod",
+                );
+
+                if !native.optional {
+                    return Err(e);
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -189,6 +205,10 @@ fn after_game_main<R: FnOnce() -> Result<(), eyre::Error>>(
     let (immediate, delayed) = attach_config.natives.split_at(first_delayed_offset);
 
     for native in immediate {
+        if native.early_load {
+            continue;
+        }
+
         if let Err(e) = ModHost::get_attached().load_native(&native.path, &native.initializer) {
             warn!(
                 error = &*e,
@@ -205,6 +225,10 @@ fn after_game_main<R: FnOnce() -> Result<(), eyre::Error>>(
     let delayed = delayed.to_vec();
     std::thread::spawn(move || {
         for native in delayed {
+            if native.early_load {
+                continue;
+            }
+
             if let Err(e) = ModHost::get_attached().load_native(&native.path, &native.initializer) {
                 warn!(
                     error = &*e,

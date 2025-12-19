@@ -10,6 +10,7 @@ V1(
                 enabled: true,
                 load_before: [],
                 load_after: [],
+                early_load: false,
                 initializer: None,
                 finalizer: None,
             },
