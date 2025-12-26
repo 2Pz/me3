@@ -6,7 +6,10 @@
 use std::{
     fs::OpenOptions,
     io::stdout,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, OnceLock,
+    },
 };
 
 use eyre::OptionExt;
@@ -16,11 +19,15 @@ use me3_launcher_attach_protocol::{AttachConfig, AttachRequest, AttachResult, At
 use me3_mod_host_assets::mapping::VfsOverrideMapping;
 use me3_telemetry::TelemetryConfig;
 use tracing::{error, info, warn, Span};
+use windows::core::{s, w};
 use windows::Win32::{
+    Foundation::{GetLastError, ERROR_INVALID_PARAMETER},
     Globalization::CP_UTF8,
     System::{
         Console::SetConsoleOutputCP,
+        LibraryLoader::{GetModuleHandleW, GetProcAddress},
         SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH},
+        Threading::{GetCurrentProcess, GetProcessAffinityMask},
     },
 };
 
@@ -44,6 +51,66 @@ mod skip_logos;
 
 static INSTANCE: OnceLock<usize> = OnceLock::new();
 static mut TELEMETRY_INSTANCE: OnceLock<me3_telemetry::Telemetry> = OnceLock::new();
+static AFFINITY_LOGGED_ONCE: AtomicBool = AtomicBool::new(false);
+
+fn install_affinity_workaround() -> Result<(), eyre::Error> {
+    type SetThreadAffinityMaskFn =
+        unsafe extern "system" fn(windows::Win32::Foundation::HANDLE, usize) -> usize;
+
+    // Prefer kernel32: on some systems `SetThreadAffinityMask` is not exported from kernelbase.
+    let kernel32 = unsafe { GetModuleHandleW(w!("kernel32.dll")).ok() };
+    let kernelbase = unsafe { GetModuleHandleW(w!("kernelbase.dll")).ok() };
+
+    let set_thread_affinity_mask: SetThreadAffinityMaskFn = unsafe {
+        let p = kernel32
+            .and_then(|m| GetProcAddress(m, s!("SetThreadAffinityMask")))
+            .or_else(|| kernelbase.and_then(|m| GetProcAddress(m, s!("SetThreadAffinityMask"))))
+            .ok_or_eyre("SetThreadAffinityMask not found (tried kernel32.dll, kernelbase.dll)")?;
+
+        std::mem::transmute(p)
+    };
+
+    ModHost::get_attached()
+        .hook(set_thread_affinity_mask)
+        .with_closure(move |thread, requested_mask, trampoline| unsafe {
+            let prev = trampoline(thread, requested_mask);
+            if prev != 0 {
+                return prev;
+            }
+
+            if GetLastError() != ERROR_INVALID_PARAMETER {
+                return 0;
+            }
+
+            let mut process_mask: usize = 0;
+            let mut system_mask: usize = 0;
+            if GetProcessAffinityMask(
+                GetCurrentProcess(),
+                &mut process_mask,
+                &mut system_mask,
+            )
+            .is_err()
+                || process_mask == 0
+            {
+                return 0;
+            }
+
+            let patched_mask = match requested_mask & process_mask {
+                0 => process_mask,
+                m => m,
+            };
+
+            let prev2 = trampoline(thread, patched_mask);
+            if prev2 != 0 && !AFFINITY_LOGGED_ONCE.swap(true, Ordering::Relaxed) {
+                warn!("thread affinity workaround active: process has restricted CPU affinity (e.g. CPU0 disabled)");
+            }
+            prev2
+        })
+        .install()?;
+
+    info!("installed thread affinity workaround");
+    Ok(())
+}
 
 dll_syringe::payload_procedure! {
     fn me_attach(request: AttachRequest) -> AttachResult {
@@ -101,6 +168,12 @@ fn on_attach(request: AttachRequest) -> AttachResult {
         }
 
         ModHost::new(&attach_config).attach();
+
+        // Elden Ring (as far as we know): can crash during startup if CPU0 is excluded from the
+        // process affinity (e.g. Process Lasso). This installs a small workaround.
+        if let Err(e) = install_affinity_workaround() {
+            warn!("error" = %e, "failed to install affinity workaround");
+        }
 
         dearxan(&attach_config)?;
 
