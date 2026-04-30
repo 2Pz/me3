@@ -3,6 +3,7 @@ pub mod steam;
 pub mod strategy;
 
 use std::{
+    ffi::OsString,
     fmt::Debug,
     fs::File,
     io::{BufRead, BufReader},
@@ -174,6 +175,15 @@ pub struct LaunchArgs {
     /// Name of an alternative savefile to use (in the default savefile directory).
     #[arg(long("savefile"), help_heading = "Mod configuration")]
     savefile: Option<String>,
+
+    /// Arguments to pass directly to the game.
+    ///
+    /// The "%command%" token can be used to wrap game execution with other
+    /// tools on Linux, similar to Steam launch options.
+    ///
+    /// Example: me3 launch -p eldenring-default -- protonhax init %command%
+    #[clap(trailing_var_arg = true, allow_hyphen_values = true)]
+    args: Vec<OsString>,
 }
 
 struct LaunchContext {
@@ -457,7 +467,7 @@ pub fn launch(
         })?;
 
     let launch_strategy = create_launch_strategy(&config, &game, &game_executable, &attach_config)?;
-    let mut injector_command = launch_strategy.build_command(&launcher_path, vec![])?;
+    let mut injector_command = launch_strategy.build_command(&launcher_path, args.args)?;
 
     let attach_config_dir = config.cache_dir().unwrap_or(Box::from(Path::new(".")));
     std::fs::create_dir_all(&attach_config_dir)?;

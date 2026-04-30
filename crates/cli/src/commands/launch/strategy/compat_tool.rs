@@ -262,6 +262,17 @@ impl LaunchStrategy for CompatToolLaunchStrategy {
             tool = parent_tool;
         }
 
+        let mut exe_args = exe_args;
+        if let Some(idx) = exe_args
+            .iter()
+            .position(|p| p.to_str() == Some("%command%"))
+        {
+            for arg in exe_args[..idx].iter().rev() {
+                args.push_front(arg.to_string_lossy().to_string());
+            }
+            exe_args = exe_args[idx + 1..].to_vec();
+        }
+
         let mut command = Command::new(
             args.pop_front()
                 .ok_or_eyre("Compat Tool produced invalid command")?,
@@ -282,6 +293,9 @@ impl LaunchStrategy for CompatToolLaunchStrategy {
             app_id,
             base_dirs,
         )?;
+
+        info!(program = ?command.get_program(), args = ?command.get_args().collect::<Vec<_>>(), "executing injector command");
+
         Ok(command)
     }
 }
