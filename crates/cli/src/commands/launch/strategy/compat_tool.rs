@@ -271,6 +271,7 @@ impl LaunchStrategy for CompatToolLaunchStrategy {
             // Steam-style launch options: tokens before %command% that match
             // KEY=VALUE are set as environment variables, everything else is
             // prepended as command-line wrapper arguments.
+            let mut wrapper_args: Vec<String> = Vec::new();
             for arg in exe_args[..idx].iter() {
                 let s = arg.to_string_lossy();
                 if let Some((key, value)) = s.split_once('=') {
@@ -283,11 +284,15 @@ impl LaunchStrategy for CompatToolLaunchStrategy {
                     if is_env_var {
                         extra_env_vars.push((key.to_string(), value.to_string()));
                     } else {
-                        args.push_back(s.to_string());
+                        wrapper_args.push(s.to_string());
                     }
                 } else {
-                    args.push_back(s.to_string());
+                    wrapper_args.push(s.to_string());
                 }
+            }
+            // Prepend wrapper args so they wrap the entire compat tool chain.
+            for arg in wrapper_args.into_iter().rev() {
+                args.push_front(arg);
             }
             exe_args = exe_args[idx + 1..].to_vec();
         }
