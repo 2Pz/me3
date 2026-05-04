@@ -179,9 +179,11 @@ pub struct LaunchArgs {
     /// Arguments to pass directly to the game.
     ///
     /// The "%command%" token can be used to wrap game execution with other
-    /// tools on Linux, similar to Steam launch options.
+    /// tools on Linux, similar to Steam launch options. Environment variables
+    /// can be set using KEY=VALUE syntax before %command%.
     ///
-    /// Example: me3 launch -p eldenring-default -- protonhax init %command%
+    /// Example: me3 launch -p myprofile -- PROTON_ENABLE_WAYLAND=1 %command%
+    /// Example: me3 launch -p myprofile -- protonhax init %command%
     #[clap(trailing_var_arg = true, allow_hyphen_values = true)]
     args: Vec<OsString>,
 }

@@ -263,12 +263,31 @@ impl LaunchStrategy for CompatToolLaunchStrategy {
         }
 
         let mut exe_args = exe_args;
+        let mut extra_env_vars: Vec<(String, String)> = Vec::new();
         if let Some(idx) = exe_args
             .iter()
             .position(|p| p.to_str() == Some("%command%"))
         {
-            for arg in exe_args[..idx].iter().rev() {
-                args.push_front(arg.to_string_lossy().to_string());
+            // Steam-style launch options: tokens before %command% that match
+            // KEY=VALUE are set as environment variables, everything else is
+            // prepended as command-line wrapper arguments.
+            for arg in exe_args[..idx].iter() {
+                let s = arg.to_string_lossy();
+                if let Some((key, value)) = s.split_once('=') {
+                    // A valid env-var name starts with a letter or underscore
+                    // and contains only alphanumerics/underscores.
+                    let is_env_var = !key.is_empty()
+                        && key.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+                        && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+
+                    if is_env_var {
+                        extra_env_vars.push((key.to_string(), value.to_string()));
+                    } else {
+                        args.push_back(s.to_string());
+                    }
+                } else {
+                    args.push_back(s.to_string());
+                }
             }
             exe_args = exe_args[idx + 1..].to_vec();
         }
@@ -281,6 +300,10 @@ impl LaunchStrategy for CompatToolLaunchStrategy {
         command.arg(exe);
         command.arg("--");
         command.args(exe_args);
+
+        for (key, value) in &extra_env_vars {
+            command.env(key, value);
+        }
 
         base_dirs.push(exe.parent().unwrap().to_path_buf());
 
